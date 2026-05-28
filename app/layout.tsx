@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Dawn Honvedseg jelentésíró",
-  description: "Discord integrációval működő online jelentésíró felület.",
+  title: "DawnNAV jelentésíró",
+  description: "DAWN-NAV stílusú jelentésíró felület Discord integrációval.",
 };
 
 export default function RootLayout({

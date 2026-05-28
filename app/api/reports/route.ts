@@ -24,6 +24,19 @@ type UploadableFile = File & {
   type: string;
 };
 
+type ReportPayload = {
+  reporterName: string;
+  badgeNumber: string;
+  category: string;
+  reportDate: string;
+  summary: string;
+  fineAmount: string;
+  speeders: string;
+  imageEvidence: string;
+  description: string;
+  patrolPartners: string[];
+};
+
 export async function POST(request: Request) {
   const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
 
@@ -43,29 +56,31 @@ export async function POST(request: Request) {
   }
 
   const formData = await request.formData();
-  const report = {
+  const report: ReportPayload = {
     reporterName: getString(formData, "reporterName"),
-    discordName: getString(formData, "discordName"),
-    reportType: getString(formData, "reportType"),
-    priority: getString(formData, "priority"),
-    subjectName: getString(formData, "subjectName"),
-    location: getString(formData, "location"),
-    incidentDate: getString(formData, "incidentDate"),
-    contact: getString(formData, "contact"),
+    badgeNumber: getString(formData, "badgeNumber"),
+    category: getString(formData, "category"),
+    reportDate: getString(formData, "reportDate"),
     summary: getString(formData, "summary"),
+    fineAmount: getString(formData, "fineAmount"),
+    speeders: getString(formData, "speeders"),
+    imageEvidence: getString(formData, "imageEvidence"),
     description: getString(formData, "description"),
-    evidenceLinks: getString(formData, "evidenceLinks"),
+    patrolPartners: formData
+      .getAll("patrolPartners")
+      .filter((value): value is string => typeof value === "string")
+      .map((value) => value.trim())
+      .filter(Boolean),
   };
 
   const missingFields = [
     ["reporterName", "Jelentő neve"],
-    ["discordName", "Discord név"],
-    ["reportType", "Jelentés típusa"],
-    ["priority", "Prioritás"],
-    ["incidentDate", "Esemény ideje"],
-    ["summary", "Rövid tárgy"],
-    ["description", "Részletes leírás"],
-  ].filter(([key]) => !report[key as keyof typeof report]);
+    ["badgeNumber", "Jelvényszám"],
+    ["category", "Kategória"],
+    ["reportDate", "Intézkedés dátuma"],
+    ["summary", "Cím / tárgy"],
+    ["description", "Leírás"],
+  ].filter(([key]) => !report[key as keyof ReportPayload]);
 
   if (missingFields.length > 0) {
     return NextResponse.json(
@@ -88,23 +103,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: fileValidationError }, { status: 400 });
   }
 
-  const roleId = process.env.DISCORD_REPORT_ROLE_ID?.trim();
+  if (files.length === 0 && !report.imageEvidence) {
+    return NextResponse.json(
+      { error: "Legalább egy kép vagy bizonyíték link megadása kötelező." },
+      { status: 400 },
+    );
+  }
+
+  const roleIds = getRoleIds();
   const payload = {
-    username: process.env.DISCORD_WEBHOOK_USERNAME || "Dawn Honvedseg Jelentesek",
+    username: process.env.DISCORD_WEBHOOK_USERNAME || "DawnNAV",
     avatar_url: process.env.DISCORD_WEBHOOK_AVATAR_URL || undefined,
-    content: roleId
-      ? `<@&${roleId}> Új jelentés érkezett: ${report.summary}`
-      : `Új jelentés érkezett: ${report.summary}`,
-    allowed_mentions: roleId ? { roles: [roleId] } : { parse: [] },
+    content: buildMentionLine(roleIds),
+    allowed_mentions: roleIds.length > 0 ? { roles: roleIds } : { parse: [] },
     embeds: [
       {
-        title: truncate(report.summary, 256),
+        title: getDiscordTitle(report.category),
         description: truncate(report.description, 3900),
-        color: getPriorityColor(report.priority),
+        color: getCategoryColor(report.category),
         fields: buildFields(report, files),
         timestamp: new Date().toISOString(),
         footer: {
-          text: "Dawn Honvedseg jelentésíró",
+          text: "NAV Automatikus Értesítő",
         },
       },
     ],
@@ -141,7 +161,7 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({
-    message: "A jelentés sikeresen megérkezett a Discord csatornába.",
+    message: "A jelentés sikeresen bekerült a Discord #webteendők csatornába.",
   });
 }
 
@@ -179,35 +199,19 @@ function validateFiles(files: UploadableFile[]) {
   return "";
 }
 
-function buildFields(
-  report: {
-    reporterName: string;
-    discordName: string;
-    reportType: string;
-    priority: string;
-    subjectName: string;
-    location: string;
-    incidentDate: string;
-    contact: string;
-    evidenceLinks: string;
-  },
-  files: UploadableFile[],
-) {
+function buildFields(report: ReportPayload, files: UploadableFile[]) {
   const fields: Array<DiscordField | null> = [
-    createField("Jelentő", report.reporterName, true),
-    createField("Discord", report.discordName, true),
-    createField("Típus", report.reportType, true),
-    createField("Prioritás", report.priority, true),
-    createField("Esemény ideje", formatDate(report.incidentDate), true),
-    createField("Helyszín", report.location || "Nincs megadva", true),
-    createField("Érintett", report.subjectName || "Nincs megadva", true),
-    createField("Elérhetőség", report.contact || "Nincs megadva", true),
-    createField("Külső linkek", normalizeLinks(report.evidenceLinks), false),
+    createField("Tag", `${report.reporterName} (${report.badgeNumber})`, true),
+    createField("Cím", formatReportTitle(report), true),
+    createField("Kategória", report.category, true),
+    createField("Bírság összege", formatMoney(report.fineAmount), true),
+    createField("Bemért gyorshajtók", report.speeders || "0", true),
     createField(
-      "Csatolt képek",
-      files.length > 0 ? `${files.length} fájl csatolva.` : "Nincs csatolt kép.",
+      "Járőrtársak",
+      report.patrolPartners.length > 0 ? report.patrolPartners.join(", ") : "Nincs megadva",
       false,
     ),
+    createField("Kép / bizonyíték", buildEvidenceValue(report.imageEvidence, files), false),
   ];
 
   return fields.filter(Boolean) as DiscordField[];
@@ -225,16 +229,36 @@ function createField(name: string, value: string, inline = false): DiscordField 
   };
 }
 
-function normalizeLinks(value: string) {
-  if (!value.trim()) {
-    return "";
+function formatReportTitle(report: ReportPayload) {
+  if (report.summary) {
+    return report.summary;
   }
 
-  return value
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .join("\n");
+  return `${report.category} - ${formatDate(report.reportDate)}`;
+}
+
+function buildEvidenceValue(imageEvidence: string, files: UploadableFile[]) {
+  const parts = [];
+
+  if (imageEvidence) {
+    parts.push(imageEvidence);
+  }
+
+  if (files.length > 0) {
+    parts.push(`${files.length} fájl csatolva.`);
+  }
+
+  return parts.join("\n");
+}
+
+function formatMoney(value: string) {
+  const normalized = value.replace(/[^0-9]/g, "");
+
+  if (!normalized) {
+    return "$0";
+  }
+
+  return `$${Number(normalized).toLocaleString("en-US")}`;
 }
 
 function formatDate(value: string) {
@@ -246,21 +270,70 @@ function formatDate(value: string) {
 
   return new Intl.DateTimeFormat("hu-HU", {
     dateStyle: "medium",
-    timeStyle: "short",
   }).format(date);
 }
 
-function getPriorityColor(priority: string) {
-  switch (priority.toLowerCase()) {
-    case "sürgős":
-      return 0xff6d7a;
-    case "magas":
-      return 0xffd166;
-    case "alacsony":
-      return 0x50d79a;
-    default:
-      return 0x6ea8ff;
+function getDiscordTitle(category: string) {
+  const normalized = category.toLowerCase();
+
+  if (normalized.includes("merkur")) {
+    return "Új MERKUR Speciális Jelentés!";
   }
+
+  if (normalized.includes("jármű")) {
+    return "Új Jármű Jelentés!";
+  }
+
+  if (normalized.includes("szolgálati")) {
+    return "Új Szolgálati Idő Leadva!";
+  }
+
+  if (normalized.includes("cég")) {
+    return "Új cégügy a Portálon!";
+  }
+
+  return "Új Jelentés Leadva!";
+}
+
+function getCategoryColor(category: string) {
+  const normalized = category.toLowerCase();
+
+  if (normalized.includes("merkur")) {
+    return 0x9b8cff;
+  }
+
+  if (normalized.includes("börtön")) {
+    return 0xff6b78;
+  }
+
+  if (normalized.includes("csekk") || normalized.includes("gyors")) {
+    return 0xe9b949;
+  }
+
+  if (normalized.includes("cég")) {
+    return 0x58a6ff;
+  }
+
+  return 0x10ba81;
+}
+
+function getRoleIds() {
+  const roleConfig = [
+    process.env.DISCORD_TASK_ROLE_IDS,
+    process.env.DISCORD_REPORT_ROLE_ID,
+  ]
+    .filter(Boolean)
+    .join(",");
+
+  return roleConfig
+    .split(",")
+    .map((roleId) => roleId.trim())
+    .filter(Boolean);
+}
+
+function buildMentionLine(roleIds: string[]) {
+  const mentions = roleIds.map((roleId) => `<@&${roleId}>`).join(" ");
+  return mentions ? `${mentions} | Új teendő érkezett!` : "Új teendő érkezett!";
 }
 
 function sanitizeFileName(fileName: string) {
