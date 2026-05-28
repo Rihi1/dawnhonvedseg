@@ -1,0 +1,41 @@
+{
+  "name": "dawnhonvedseg-reporting",
+  "version": "1.0.0",
+  "description": "Discord-integrated report writer for Dawn Honvedseg",
+  "main": "index.js",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Rihi1/dawnhonvedseg.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Rihi1/dawnhonvedseg/issues"
+  },
+  "homepage": "https://github.com/Rihi1/dawnhonvedseg#readme",
+  "dependencies": {
+    "next": "^16.2.6",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "@types/react": "^19.2.15",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^16.2.6",
+    "typescript": "^6.0.3"
+  },
+  "private": true,
+  "overrides": {
+    "postcss": "8.5.15"
+  }
+}
